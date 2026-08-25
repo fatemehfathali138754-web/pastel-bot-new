@@ -3,7 +3,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 
 BOT_TOKEN = "8850433468:AAG8DnOH_MzBGoF5_GDfnAtAApHsTgqJuaY"
 CHANNEL_ID = "@PastelFinal"
-PDF_FILE_NAME = "jozve.pdf"
+PDF_FILE_NAME = "jozve (1).pdf"
 CAPTION_TEXT = "📚 جزوه ریاضی با موفقیت ارسال شد.\nکانال ما: @PastelFinal"
 
 async def is_subscribed(user_id: int, bot) -> bool:
