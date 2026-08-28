@@ -13,7 +13,7 @@ class H(BaseHTTPRequestHandler):
 def run_s():
     HTTPServer(("0.0.0.0", int(os.environ.get("PORT", 10000))), H).serve_forever()
 
-TOKEN = "8850433468:AAG8DnOH_MzBGoF5_GDfnAtAApHsTgqJuaY"
+TOKEN = "8850433468:AAFZqMNMcUcHu5AzHQeEJbhwP4VRcYWQsJw"
 ADMIN = 8489885798
 DB = "booklets.json"
 CHANNELS = [
