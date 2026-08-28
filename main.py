@@ -1,87 +1,89 @@
-import os
-import threading
+import os, json, threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-class SimpleHealthCheck(BaseHTTPRequestHandler):
+class H(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.send_header("Content-type", "text/plain")
         self.end_headers()
-        self.wfile.write(b"Bot is alive!")
+        self.wfile.write(b"OK")
 
-def run_http_server():
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), SimpleHealthCheck)
-    server.serve_forever()
+def run_s():
+    HTTPServer(("0.0.0.0", int(os.environ.get("PORT", 10000))), H).serve_forever()
 
-BOT_TOKEN = "8850433468:AAG8DnOH_MzBGoF5_GDfnAtAApHsTgqJuaY"
-PDF_FILE_NAME = "jozve (1).pdf"
-CAPTION_TEXT = "📚 جزوه ریاضی با موفقیت ارسال شد.\nکانال ما: @PastelFinal"
-
-TARGETS = [
-    {
-        "id": "@PastelFinal", 
-        "text": "📢 عضویت در کانال اول", 
-        "url": "https://t.me/PastelFinal"
-    },
-    {
-        "id": "@VlP_KLID", 
-        "text": "📢 عضویت در کانال دوم", 
-        "url": "https://t.me/VlP_KLID"
-    },
-    {
-        "id": -1004361916345, 
-        "text": "👥 عضویت در گروه", 
-        "url": "https://t.me/+2gHubFEar48yODZk"
-    }
+TOKEN = "8850433468:AAG8DnOH_MzBGoF5_GDfnAtAApHsTgqJuaY"
+ADMIN = 8489885798
+DB = "booklets.json"
+CHANNELS = [
+    {"id": "@PastelFinal", "t": "📢 کانال اول", "u": "https://t.me/PastelFinal"},
+    {"id": "@VlP_KLID", "t": "📢 کانال دوم", "u": "https://t.me/VlP_KLID"},
+    {"id": -1004361916345, "t": "👥 گروه", "u": "https://t.me/+2gHubFEar48yODZk"}
 ]
 
-async def check_all_memberships(user_id: int, bot) -> bool:
-    for target in TARGETS:
+def get_db():
+    if os.path.exists(DB):
+        try: return json.load(open(DB, "r", encoding="utf-8"))
+        except: return []
+    return []
+
+def save_db(data):
+    json.dump(data, open(DB, "w", encoding="utf-8"), ensure_ascii=False)
+
+async def is_sub(uid, bot):
+    for c in CHANNELS:
         try:
-            member = await bot.get_chat_member(chat_id=target["id"], user_id=user_id)
-            if member.status not in ["member", "administrator", "creator"]:
-                return False
-        except Exception as err:
-            print(f"Error checking {target['id']}: {err}")
-            return False
+            m = await bot.get_chat_member(c["id"], uid)
+            if m.status not in ["member", "administrator", "creator"]: return False
+        except: return False
     return True
 
-def build_keyboard():
-    buttons = []
-    for target in TARGETS:
-        buttons.append([InlineKeyboardButton(target["text"], url=target["url"])])
-    buttons.append([InlineKeyboardButton("✅ در همه عضو شدم / دریافت جزوه", callback_data="check_sub")])
-    return InlineKeyboardMarkup(buttons)
+def lock_kb():
+    btns = [[InlineKeyboardButton(c["t"], url=c["u"])] for c in CHANNELS]
+    btns.append([InlineKeyboardButton("✅ عضو شدم / دریافت جزوه‌ها", callback_data="chk")])
+    return InlineKeyboardMarkup(btns)
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if await check_all_memberships(user_id, context.bot):
-        await update.message.reply_text("عضویت شما در تمام بخش‌ها تأیید شد. در حال ارسال جزوه...")
-        with open(PDF_FILE_NAME, "rb") as pdf_file:
-            await context.bot.send_document(chat_id=user_id, document=pdf_file, caption=CAPTION_TEXT)
+def list_kb():
+    b = get_db()
+    return InlineKeyboardMarkup([[InlineKeyboardButton(f"📚 {x['name']}", callback_data=f"dl_{i}")] for i, x in enumerate(b)])
+
+async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    if await is_sub(u.effective_user.id, c.bot):
+        b = get_db()
+        txt = "جزوه مورد نظر را انتخاب کنید:" if b else "✅ عضویت تایید شد.\nهنوز جزوه‌ای ثبت نشده است."
+        await u.message.reply_text(txt, reply_markup=list_kb() if b else None)
     else:
-        await update.message.reply_text(
-            "سلام! 👋\nبرای دریافت جزوه، لطفاً در هر دو کانال و گروه زیر عضو شوید و سپس دکمه تایید را لمس کنید:",
-            reply_markup=build_keyboard()
-        )
+        await u.message.reply_text("برای دانلود جزوه در کانال‌ها عضو شوید:", reply_markup=lock_kb())
 
-async def check_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    user_id = query.from_user.id
+async def cb(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    q = u.callback_query
+    await q.answer()
+    if not await is_sub(q.from_user.id, c.bot):
+        await q.answer("❌ هنوز در تمام کانال‌ها و گروه عضو نشده‌اید!", show_alert=True)
+        return
+    if q.data == "chk":
+        b = get_db()
+        txt = "جزوه مورد نظر را انتخاب کنید:" if b else "✅ عضویت تایید شد.\nهنوز جزوه‌ای ثبت نشده است."
+        await q.edit_message_text(txt, reply_markup=list_kb() if b else None)
+    elif q.data.startswith("dl_"):
+        idx = int(q.data.split("_")[1])
+        b = get_db()
+        if 0 <= idx < len(b):
+            await c.bot.send_document(q.from_user.id, b[idx]["id"], caption=f"📚 {b[idx]['name']}\n\nکانال ما: @PastelFinal")
 
-    if await check_all_memberships(user_id, context.bot):
-        await query.edit_message_text("✅ عضویت کامل تأیید شد! در حال ارسال جزوه...")
-        with open(PDF_FILE_NAME, "rb") as pdf_file:
-            await context.bot.send_document(chat_id=user_id, document=pdf_file, caption=CAPTION_TEXT)
-    else:
-        await query.answer("❌ شما هنوز در تمام کانال‌ها و گروه عضو نشده‌اید!", show_alert=True)
+async def doc(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    if u.effective_user.id != ADMIN: return
+    d = u.message.document
+    name = d.file_name.replace(".pdf", "") if d.file_name else "جزوه جدید"
+    b = get_db()
+    b.append({"name": name, "id": d.file_id})
+    save_db(b)
+    await u.message.reply_text(f"✅ جزوه «{name}» با موفقیت اضافه شد.", reply_markup=list_kb())
 
-threading.Thread(target=run_http_server, daemon=True).start()
-app = ApplicationBuilder().token(BOT_TOKEN).build()
+threading.Thread(target=run_s, daemon=True).start()
+app = ApplicationBuilder().token(TOKEN).build()
 app.add_handler(CommandHandler("start", start))
-app.add_handler(CallbackQueryHandler(check_button, pattern="^check_sub$"))
+app.add_handler(CallbackQueryHandler(cb))
+app.add_handler(MessageHandler(filters.Document.ALL, doc))
 app.run_polling()
